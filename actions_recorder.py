@@ -45,7 +45,8 @@ def _env_int(name, default):
 
 USERNAME = os.environ["TIKTOK_USERNAME"]
 DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
-SA_JSON = os.environ["DRIVE_SERVICE_ACCOUNT_JSON"]
+SA_JSON = os.getenv("DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+OAUTH_JSON = os.getenv("DRIVE_OAUTH_JSON", "").strip()
 POLL_SECONDS = _env_int("POLL_SECONDS", 60)
 RETENTION_DAYS = _env_int("RETENTION_DAYS", 14)
 MAX_RUNTIME = _env_int("MAX_RUNTIME", 19500)  # 5h25m: deja ~28 min al job (350) para subir el video final
@@ -63,11 +64,21 @@ def log(msg):
 
 
 def get_drive_service():
-    from google.oauth2 import service_account
     from googleapiclient.discovery import build
-    creds = service_account.Credentials.from_service_account_info(
-        json.loads(SA_JSON), scopes=["https://www.googleapis.com/auth/drive"]
-    )
+
+    if OAUTH_JSON:
+        # Subir como la cuenta de Google del usuario (15 GB, fiable).
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        creds = Credentials.from_authorized_user_info(json.loads(OAUTH_JSON))
+        creds.refresh(Request())
+    else:
+        # Fallback: service account (solo lectura util; no puede crear archivos
+        # en un Drive personal -> ver drive_setup.py para configurar OAuth).
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_info(
+            json.loads(SA_JSON), scopes=["https://www.googleapis.com/auth/drive"]
+        )
     return build("drive", "v3", credentials=creds)
 
 
@@ -80,13 +91,22 @@ def sa_email():
 
 
 def check_folder(svc):
-    """Valida que la carpeta DRIVE_FOLDER exista y sea accesible por la SA."""
+    """Valida que la carpeta DRIVE_FOLDER exista y sea accesible."""
     try:
         meta = svc.files().get(fileId=DRIVE_FOLDER, fields="id,name,trashed").execute()
         log(f"Carpeta Drive OK: '{meta.get('name')}' ({meta.get('id')})")
+        try:
+            who = svc.about().get(fields="user(emailAddress)").execute()
+            log(f"Autenticado en Drive como: {who.get('user', {}).get('emailAddress')}")
+        except Exception:
+            pass
         return True
     except Exception as e:
-        log("ERROR: la service account NO puede acceder a la carpeta de Drive.")
+        log(f"ERROR: no se puede acceder a la carpeta de Drive: {e}")
+        if OAUTH_JSON:
+            log("Revisa que el secret DRIVE_OAUTH_JSON sea valido (o vuelve a correr drive_setup.py).")
+        else:
+            log("Revisa que la service account tenga acceso a la carpeta.")
         log(f"Detalle: {e}")
         log("Solucion: abre la carpeta en drive.google.com -> Compartir -> agrega este correo")
         log(f"  {sa_email()}")
@@ -294,8 +314,9 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
 
 
 async def main():
-    if not (USERNAME and DRIVE_FOLDER and SA_JSON):
-        log("Faltan secrets: TIKTOK_USERNAME / DRIVE_FOLDER / DRIVE_SERVICE_ACCOUNT_JSON")
+    if not (USERNAME and DRIVE_FOLDER and (SA_JSON or OAUTH_JSON)):
+        log("Faltan secrets: TIKTOK_USERNAME / DRIVE_FOLDER / y DRIVE_SERVICE_ACCOUNT_JSON "
+            "o DRIVE_OAUTH_JSON")
         sys.exit(2)
 
     try:
