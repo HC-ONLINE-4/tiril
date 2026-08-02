@@ -82,36 +82,32 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-def sa_email():
-    """Devuelve el correo de la service account (para los mensajes de ayuda)."""
-    try:
-        return json.loads(SA_JSON).get("client_email", "")
-    except Exception:
-        return ""
-
-
 def check_folder(svc):
-    """Valida que la carpeta DRIVE_FOLDER exista y sea accesible."""
+    """Valida que se pueda ESCRIBIR en la carpeta DRIVE_FOLDER (crea y borra un archivo probe)."""
     try:
-        meta = svc.files().get(fileId=DRIVE_FOLDER, fields="id,name,trashed").execute()
-        log(f"Carpeta Drive OK: '{meta.get('name')}' ({meta.get('id')})")
-        try:
-            who = svc.about().get(fields="user(emailAddress)").execute()
-            log(f"Autenticado en Drive como: {who.get('user', {}).get('emailAddress')}")
-        except Exception:
-            pass
+        who = svc.about().get(fields="user(emailAddress)").execute()
+        log(f"Autenticado en Drive como: {who.get('user', {}).get('emailAddress')}")
+    except Exception:
+        pass
+
+    try:
+        from googleapiclient.http import MediaIoBaseUpload
+        import io
+        probe = svc.files().create(
+            body={"name": "_probe.txt", "parents": [DRIVE_FOLDER], "mimeType": "text/plain"},
+            media_body=MediaIoBaseUpload(io.BytesIO(b"ok"), "text/plain"),
+        ).execute()
+        svc.files().delete(fileId=probe["id"]).execute()
+        log("Carpeta Drive OK: acceso de escritura confirmado")
         return True
     except Exception as e:
-        log(f"ERROR: no se puede acceder a la carpeta de Drive: {e}")
+        log(f"ERROR: no se puede ESCRIBIR en la carpeta de Drive: {e}")
         if OAUTH_JSON:
-            log("Revisa que el secret DRIVE_OAUTH_JSON sea valido (o vuelve a correr drive_setup.py).")
+            log("El token fue creado con la cuenta duena de la carpeta? "
+                "(vuelve a correr: python drive_setup.py client_secret.json)")
         else:
-            log("Revisa que la service account tenga acceso a la carpeta.")
-        log(f"Detalle: {e}")
-        log("Solucion: abre la carpeta en drive.google.com -> Compartir -> agrega este correo")
-        log(f"  {sa_email()}")
-        log("  con permiso EDITOR, y verifica que el secret DRIVE_FOLDER sea solo el ID")
-        log(f"  ({DRIVE_FOLDER}) sin URL ni espacios.")
+            log("La service account no puede crear archivos en un Drive personal; "
+                "configura OAuth con drive_setup.py.")
         return False
 
 
