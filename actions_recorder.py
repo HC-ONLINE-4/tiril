@@ -71,6 +71,30 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
+def sa_email():
+    """Devuelve el correo de la service account (para los mensajes de ayuda)."""
+    try:
+        return json.loads(SA_JSON).get("client_email", "")
+    except Exception:
+        return ""
+
+
+def check_folder(svc):
+    """Valida que la carpeta DRIVE_FOLDER exista y sea accesible por la SA."""
+    try:
+        meta = svc.files().get(fileId=DRIVE_FOLDER, fields="id,name,trashed").execute()
+        log(f"Carpeta Drive OK: '{meta.get('name')}' ({meta.get('id')})")
+        return True
+    except Exception as e:
+        log("ERROR: la service account NO puede acceder a la carpeta de Drive.")
+        log(f"Detalle: {e}")
+        log("Solucion: abre la carpeta en drive.google.com -> Compartir -> agrega este correo")
+        log(f"  {sa_email()}")
+        log("  con permiso EDITOR, y verifica que el secret DRIVE_FOLDER sea solo el ID")
+        log(f"  ({DRIVE_FOLDER}) sin URL ni espacios.")
+        return False
+
+
 def upload_file(svc, path: Path):
     from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(str(path), resumable=True, chunksize=8 * 1024 * 1024)
@@ -288,6 +312,8 @@ async def main():
             state["cap"].add_follow(event)
 
     svc = get_drive_service()
+    if not check_folder(svc):
+        sys.exit(1)
     cleanup_old(svc)
 
     deadline = time.time() + MAX_RUNTIME
