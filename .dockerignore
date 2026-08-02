@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+.env.*
+grabaciones/
+browser_profile/
+logs/
+mpv/
+*.mp4
+*.flv
+*.ts
+*.json
