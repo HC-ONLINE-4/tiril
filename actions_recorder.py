@@ -95,12 +95,26 @@ def check_folder(svc):
         return False
 
 
-def upload_file(svc, path: Path):
+def upload_file(svc, path: Path) -> bool:
     from googleapiclient.http import MediaFileUpload
     media = MediaFileUpload(str(path), resumable=True, chunksize=8 * 1024 * 1024)
     meta = {"name": path.name, "parents": [DRIVE_FOLDER]}
     resp = svc.files().create(body=meta, media_body=media, fields="id,name,size").execute()
     log(f"Subido a Drive: {resp['name']} ({resp.get('size', '?')} bytes)")
+    return True
+
+
+async def upload_with_retry(svc, path: Path, attempts: int = 5) -> bool:
+    """Sube un archivo con reintentos y espera progresiva (fallos de red transitorios)."""
+    for i in range(1, attempts + 1):
+        try:
+            return upload_file(svc, path)
+        except Exception as e:
+            log(f"Error subiendo {path.name} (intento {i}/{attempts}): {e}")
+            if i < attempts:
+                await asyncio.sleep(10 * i)
+    log(f"Rendido: no se pudo subir {path.name}")
+    return False
 
 
 def cleanup_old(svc):
@@ -171,94 +185,112 @@ async def check_live(client) -> bool:
 
 async def record_whole_live(client, state, svc, deadline) -> bool:
     """Conecta, graba TODO el live y lo sube al terminar. True si se grabo algo."""
-    log("LIVE detectado! Conectando al WebSocket...")
-    try:
-        await client.start(fetch_room_info=True)
-    except Exception as e:
-        log(f"Error conectando: {e}")
-        return False
-
-    title = "Sin titulo"
-    stream_url = None
-    if client.room_info and isinstance(client.room_info, dict):
-        title = client.room_info.get("title", title)
-        stream_url = extract_stream_url(client.room_info)
-    if not stream_url:
-        try:
-            info = await client._web.fetch_room_info()
-            if isinstance(info, dict):
-                title = info.get("title", title)
-                stream_url = extract_stream_url(info)
-        except Exception as e:
-            log(f"Fallback fetch_room_info fallo: {e}")
-
-    if not stream_url:
-        log("No se encontro stream URL")
-        await client.disconnect()
-        return False
-
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:50].strip()
-    base = f"{USERNAME}_{ts}_{safe_title}" if safe_title else f"{USERNAME}_{ts}"
-
     from chat_capture import ChatCapture
 
-    cap = ChatCapture(USERNAME, str(UPLOAD_DIR))
-    cap.start()
-    state["cap"] = cap
-
-    seg = 1
+    cap = None
+    pending = []
     uploaded = 0
-    while True:
-        remaining = int(deadline - time.time())
-        name = base if seg == 1 else f"{base}_{seg}"
-        log(f"Grabando segmento {seg} (hasta {remaining}s restantes)...")
-        video = await asyncio.get_running_loop().run_in_executor(
-            None, record_segment, stream_url, name, max(remaining, 60)
-        )
-        seg += 1
-
-        # Subir el segmento YA MISMO: aunque el job muera despues,
-        # lo grabado hasta aqui ya esta a salvo en Drive.
-        if video.exists() and video.stat().st_size >= 100_000:
-            upload_file(svc, video)
-            uploaded += 1
-            snap = UPLOAD_DIR / f"{name}_chat.json"
-            cap.save(filename=snap.name)
-            if snap.exists():
-                upload_file(svc, snap)
-                snap.unlink()
-        elif video.exists():
-            log(f"Segmento vacio o muy pequeno, se descarta: {video.name}")
-            video.unlink()
-        video.unlink(missing_ok=True)
-
-        if not await check_live(client):
-            log("El live termino")
-            break
-        if time.time() >= deadline - SAFETY_MARGIN:
-            log("Presupuesto del runner agotado con el live activo: subiendo lo ultimo...")
-            break
-
-    state["cap"] = None
-    cap.stop()
 
     try:
-        await client.disconnect()
-    except Exception:
-        pass
+        log("LIVE detectado! Conectando al WebSocket...")
+        try:
+            await client.start(fetch_room_info=True)
+        except Exception as e:
+            log(f"Error conectando: {e}")
+            return False
 
-    # Chat completo del live (sobreescribe el snapshot del primer segmento)
-    chat_path = UPLOAD_DIR / f"{base}_chat.json"
-    cap.save(filename=chat_path.name)
-    if chat_path.exists():
-        upload_file(svc, chat_path)
-        chat_path.unlink()
+        title = "Sin titulo"
+        stream_url = None
+        if client.room_info and isinstance(client.room_info, dict):
+            title = client.room_info.get("title", title)
+            stream_url = extract_stream_url(client.room_info)
+        if not stream_url:
+            try:
+                info = await client._web.fetch_room_info()
+                if isinstance(info, dict):
+                    title = info.get("title", title)
+                    stream_url = extract_stream_url(info)
+            except Exception as e:
+                log(f"Fallback fetch_room_info fallo: {e}")
 
-    if uploaded:
-        log(f"Live completo subido ({uploaded} archivo(s) + chat)")
-        return True
-    return False
+        if not stream_url:
+            log("No se encontro stream URL")
+            return False
+
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        safe_title = "".join(c for c in title if c.isalnum() or c in " -_")[:50].strip()
+        base = f"{USERNAME}_{ts}_{safe_title}" if safe_title else f"{USERNAME}_{ts}"
+
+        cap = ChatCapture(USERNAME, str(UPLOAD_DIR))
+        cap.start()
+        state["cap"] = cap
+
+        seg = 1
+        while True:
+            remaining = int(deadline - time.time())
+            name = base if seg == 1 else f"{base}_{seg}"
+            log(f"Grabando segmento {seg} (hasta {remaining}s restantes)...")
+            video = await asyncio.get_running_loop().run_in_executor(
+                None, record_segment, stream_url, name, max(remaining, 60)
+            )
+            seg += 1
+
+            # Subir el segmento YA MISMO: aunque el job muera despues,
+            # lo grabado hasta aqui ya esta a salvo en Drive.
+            if video.exists() and video.stat().st_size >= 100_000:
+                if await upload_with_retry(svc, video):
+                    uploaded += 1
+                    snap = UPLOAD_DIR / f"{name}_chat.json"
+                    cap.save(filename=snap.name)
+                    if snap.exists():
+                        await upload_with_retry(svc, snap, attempts=3)
+                        snap.unlink()
+                    video.unlink(missing_ok=True)
+                else:
+                    # No se pudo subir ahora: se guarda y se reintenta al final
+                    pending.append(video)
+            elif video.exists():
+                log(f"Segmento vacio o muy pequeno, se descarta: {video.name}")
+                video.unlink()
+
+            if not await check_live(client):
+                log("El live termino")
+                break
+            if time.time() >= deadline - SAFETY_MARGIN:
+                log("Presupuesto del runner agotado con el live activo: subiendo lo ultimo...")
+                break
+
+        # Reintentar subidas pendientes con el tiempo que quede
+        for p in pending:
+            if p.exists() and p.stat().st_size >= 100_000:
+                if await upload_with_retry(svc, p):
+                    uploaded += 1
+            p.unlink(missing_ok=True)
+
+        # Chat completo del live
+        chat_path = UPLOAD_DIR / f"{base}_chat.json"
+        if cap:
+            cap.save(filename=chat_path.name)
+        if chat_path.exists():
+            await upload_with_retry(svc, chat_path)
+            chat_path.unlink()
+
+        if uploaded:
+            log(f"Live completo subido ({uploaded} archivo(s) de video + chat)")
+            return True
+        return False
+
+    finally:
+        state["cap"] = None
+        if cap:
+            try:
+                cap.stop()
+            except Exception:
+                pass
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
 
 
 async def main():
@@ -322,8 +354,11 @@ async def main():
 
     while time.time() < deadline - SAFETY_MARGIN:
         if await check_live(client):
-            if await record_whole_live(client, state, svc, deadline):
-                cleanup_old(svc)
+            try:
+                if await record_whole_live(client, state, svc, deadline):
+                    cleanup_old(svc)
+            except Exception as e:
+                log(f"Error inesperado grabando el live: {e} - continuando el monitor...")
         else:
             await asyncio.sleep(POLL_SECONDS)
 
