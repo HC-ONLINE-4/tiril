@@ -33,12 +33,22 @@ from pathlib import Path
 
 import httpx
 
+
+def _env_int(name, default):
+    """Lee un entero de variable de entorno; si falta o es invalido usa default."""
+    raw = (os.environ.get(name) or "").strip()
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 USERNAME = os.environ["TIKTOK_USERNAME"]
 DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
 SA_JSON = os.environ["DRIVE_SERVICE_ACCOUNT_JSON"]
-POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "60"))
-RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "14"))
-MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME", "20700"))  # 5h45m (limite del runner: 6h)
+POLL_SECONDS = _env_int("POLL_SECONDS", 60)
+RETENTION_DAYS = _env_int("RETENTION_DAYS", 14)
+MAX_RUNTIME = _env_int("MAX_RUNTIME", 20700)  # 5h45m (limite del runner: 6h)
 SAFETY_MARGIN = 300  # no empezar grabaciones nuevas faltando <5 min para el limite
 FFMPEG = "ffmpeg"
 UPLOAD_DIR = Path("/tmp/upload")
