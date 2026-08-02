@@ -4,12 +4,12 @@ TikTok Live Recorder para GitHub Actions.
 Sin tarjeta ni servidor propio: corre en los runners de GitHub y sube las
 grabaciones a Google Drive (15 GB gratis) usando una service account.
 
-El job vive continuamente hasta ~5h45m:
+El job vive continuamente hasta ~5h25m (limite del runner: 6h):
   - Chequea a TikTok cada 60 segundos (POLL_SECONDS).
   - Cuando detecta LIVE, graba EL LIVE COMPLETO en un solo archivo.
-  - Al terminar el live, sube video + chat juntos a Drive.
-  - Si el runner llega al limite de 6h con el live aun activo, sube lo
-    grabado hasta ese momento (no se pierde nada) y el siguiente run
+  - Sube cada segmento a Drive apenas termina (nada se pierde si el
+    job muere) y al terminar el live sube el chat completo.
+  - Si el runner llega al limite, sube lo grabado y el siguiente run
     (watchdog cada 5 min) retoma el resto del live.
 
 Secrets requeridos en el repositorio:
@@ -48,7 +48,7 @@ DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
 SA_JSON = os.environ["DRIVE_SERVICE_ACCOUNT_JSON"]
 POLL_SECONDS = _env_int("POLL_SECONDS", 60)
 RETENTION_DAYS = _env_int("RETENTION_DAYS", 14)
-MAX_RUNTIME = _env_int("MAX_RUNTIME", 20700)  # 5h45m (limite del runner: 6h)
+MAX_RUNTIME = _env_int("MAX_RUNTIME", 19500)  # 5h25m: deja ~28 min al job (350) para subir el video final
 SAFETY_MARGIN = 300  # no empezar grabaciones nuevas faltando <5 min para el limite
 FFMPEG = "ffmpeg"
 UPLOAD_DIR = Path("/tmp/upload")
@@ -183,8 +183,8 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
     cap.start()
     state["cap"] = cap
 
-    segments = []
     seg = 1
+    uploaded = 0
     while True:
         remaining = int(deadline - time.time())
         name = base if seg == 1 else f"{base}_{seg}"
@@ -192,14 +192,28 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
         video = await asyncio.get_running_loop().run_in_executor(
             None, record_segment, stream_url, name, max(remaining, 60)
         )
-        segments.append(video)
         seg += 1
+
+        # Subir el segmento YA MISMO: aunque el job muera despues,
+        # lo grabado hasta aqui ya esta a salvo en Drive.
+        if video.exists() and video.stat().st_size >= 100_000:
+            upload_file(svc, video)
+            uploaded += 1
+            snap = UPLOAD_DIR / f"{name}_chat.json"
+            cap.save(filename=snap.name)
+            if snap.exists():
+                upload_file(svc, snap)
+                snap.unlink()
+        elif video.exists():
+            log(f"Segmento vacio o muy pequeno, se descarta: {video.name}")
+            video.unlink()
+        video.unlink(missing_ok=True)
 
         if not await check_live(client):
             log("El live termino")
             break
         if time.time() >= deadline - SAFETY_MARGIN:
-            log("Presupuesto del runner agotado con el live activo: subiendo lo grabado...")
+            log("Presupuesto del runner agotado con el live activo: subiendo lo ultimo...")
             break
 
     state["cap"] = None
@@ -210,17 +224,7 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
     except Exception:
         pass
 
-    # Subir TODO al final del live
-    uploaded = 0
-    for v in segments:
-        if v.exists() and v.stat().st_size >= 100_000:
-            upload_file(svc, v)
-            uploaded += 1
-        elif v.exists():
-            log(f"Segmento vacio o muy pequeno, se descarta: {v.name}")
-            v.unlink()
-        v.unlink(missing_ok=True)
-
+    # Chat completo del live (sobreescribe el snapshot del primer segmento)
     chat_path = UPLOAD_DIR / f"{base}_chat.json"
     cap.save(filename=chat_path.name)
     if chat_path.exists():
