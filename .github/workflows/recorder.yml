@@ -34,6 +34,7 @@ jobs:
       - name: Grabar live
         env:
           TIKTOK_USERNAME: ${{ secrets.TIKTOK_USERNAME }}
+          DRIVE_OAUTH_JSON: ${{ secrets.DRIVE_OAUTH_JSON }}
           DRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.DRIVE_SERVICE_ACCOUNT_JSON }}
           DRIVE_FOLDER: ${{ secrets.DRIVE_FOLDER }}
           POLL_SECONDS: ${{ vars.POLL_SECONDS }}
