@@ -47,6 +47,8 @@ USERNAME = os.environ["TIKTOK_USERNAME"]
 DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
 SA_JSON = os.getenv("DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
 OAUTH_JSON = os.getenv("DRIVE_OAUTH_JSON", "").strip()
+TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 POLL_SECONDS = _env_int("POLL_SECONDS", 60)
 RETENTION_DAYS = _env_int("RETENTION_DAYS", 14)
 MAX_RUNTIME = _env_int("MAX_RUNTIME", 19500)  # 5h25m: deja ~28 min al job (350) para subir el video final
@@ -61,6 +63,34 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+_tg_tasks = set()
+
+
+async def telegram_send(text: str):
+    """Envia un mensaje de Telegram (Bot API). Silencioso si no hay token/chat."""
+    if not (TG_TOKEN and TG_CHAT_ID):
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as hc:
+            r = await hc.post(
+                f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                json={"chat_id": TG_CHAT_ID, "text": text},
+            )
+            if r.status_code != 200:
+                log(f"Telegram HTTP {r.status_code}: {r.text[:150]}")
+    except Exception as e:
+        log(f"Telegram error: {e}")
+
+
+def telegram_notify(text: str):
+    """Lanza la notificacion sin bloquear la grabacion (fire-and-forget)."""
+    if not (TG_TOKEN and TG_CHAT_ID):
+        return
+    task = asyncio.get_running_loop().create_task(telegram_send(text))
+    _tg_tasks.add(task)
+    task.add_done_callback(_tg_tasks.discard)
 
 
 def get_drive_service():
@@ -206,9 +236,11 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
     cap = None
     pending = []
     uploaded = 0
+    started_at = time.time()
 
     try:
         log("LIVE detectado! Conectando al WebSocket...")
+        telegram_notify(f"LIVE DETECTADO\n@{USERNAME}\nConectando al WebSocket...")
         try:
             await client.start(fetch_room_info=True)
         except Exception as e:
@@ -292,7 +324,13 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
             chat_path.unlink()
 
         if uploaded:
+            dur = int(time.time() - started_at)
             log(f"Live completo subido ({uploaded} archivo(s) de video + chat)")
+            telegram_notify(
+                f"LIVE FINALIZADO\n@{USERNAME}\n"
+                f"Duracion: {dur // 60}min {dur % 60}s\n"
+                f"Subido a Drive: {uploaded} archivo(s)"
+            )
             return True
         return False
 
@@ -368,6 +406,8 @@ async def main():
     deadline = time.time() + MAX_RUNTIME
     log(f"Monitor iniciado: chequeando a @{USERNAME} cada {POLL_SECONDS}s "
         f"durante {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m")
+    telegram_notify(f"MONITOR ACTIVO\n@{USERNAME} cada {POLL_SECONDS}s\n"
+                    f"Vigilando hasta {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m")
 
     while time.time() < deadline - SAFETY_MARGIN:
         if await check_live(client):
