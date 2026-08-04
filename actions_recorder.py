@@ -62,7 +62,19 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def log(msg):
+    msg = str(msg).replace(USERNAME, "usuario")
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def mask_email(email: str) -> str:
+    """Oculta el correo: solo primeros 2 chars y el dominio."""
+    try:
+        name, _, dom = email.partition("@")
+        if not dom:
+            return "***"
+        return f"{name[:2]}***@{dom}"
+    except Exception:
+        return "***"
 
 
 _tg_tasks = set()
@@ -116,7 +128,7 @@ def check_folder(svc):
     """Valida que se pueda ESCRIBIR en la carpeta DRIVE_FOLDER (crea y borra un archivo probe)."""
     try:
         who = svc.about().get(fields="user(emailAddress)").execute()
-        log(f"Autenticado en Drive como: {who.get('user', {}).get('emailAddress')}")
+        log(f"Autenticado en Drive como: {mask_email(who.get('user', {}).get('emailAddress', ''))}")
     except Exception:
         pass
 
