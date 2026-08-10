@@ -197,10 +197,15 @@ def record_segment(url, name, limit_seconds):
     Devuelve la ruta del archivo y True si el stream terminó solo.
     """
     video = UPLOAD_DIR / f"{name}.mp4"
+    # -movflags +faststart SOLO (sin frag_keyframe/empty_moov, que rompen la
+    # reproduccion en algunos reproductores y Drive) y se toleran paquetes
+    # corruptos (los descarta en vez de arruinar el video) con discardcorrupt.
     cmd = [
         FFMPEG, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10",
+        "-reconnect_at_eof", "1",
+        "-fflags", "+discardcorrupt", "-err_detect", "ignore_err",
         "-i", url, "-t", str(limit_seconds),
-        "-c", "copy", "-movflags", "+faststart+frag_keyframe+empty_moov",
+        "-c", "copy", "-movflags", "+faststart",
         "-y", str(video),
     ]
     try:
@@ -252,7 +257,9 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
 
     try:
         log("LIVE detectado! Conectando al WebSocket...")
-        telegram_notify(f"LIVE DETECTADO\n@{USERNAME}\nConectando al WebSocket...")
+        if not state.get("live_notified"):
+            telegram_notify(f"LIVE DETECTADO\n@{USERNAME}\nConectando al WebSocket...")
+            state["live_notified"] = True
         try:
             await client.start(fetch_room_info=True)
         except Exception as e:
@@ -288,6 +295,23 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
         seg = 1
         while True:
             remaining = int(deadline - time.time())
+            if remaining <= 0:
+                log("Sin tiempo restante en este job")
+                break
+
+            # Cuando el live cambia (entra un invitado, cortes, cambio de
+            # calidad) TikTok invalida la URL del stream: se renueva en cada
+            # segmento para no grabarla muerta.
+            try:
+                info = await client._web.fetch_room_info()
+                if isinstance(info, dict):
+                    fresh = extract_stream_url(info)
+                    if fresh and fresh != stream_url:
+                        log("Stream URL renovada (el live cambio)")
+                        stream_url = fresh
+            except Exception as e:
+                log(f"No se pudo refrescar stream URL: {e}")
+
             name = base if seg == 1 else f"{base}_{seg}"
             log(f"Grabando segmento {seg} (hasta {remaining}s restantes)...")
             video = await asyncio.get_running_loop().run_in_executor(
@@ -295,26 +319,29 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
             )
             seg += 1
 
+            if not (video.exists() and video.stat().st_size >= 100_000):
+                video.unlink(missing_ok=True)
+                log("Stream cortado o sin datos: se detiene la grabacion y se "
+                    "reintentara con URL fresca")
+                break
+
             # Subir el segmento YA MISMO: aunque el job muera despues,
             # lo grabado hasta aqui ya esta a salvo en Drive.
-            if video.exists() and video.stat().st_size >= 100_000:
-                if await upload_with_retry(svc, video):
-                    uploaded += 1
-                    snap = UPLOAD_DIR / f"{name}_chat.json"
-                    cap.save(filename=snap.name)
-                    if snap.exists():
-                        await upload_with_retry(svc, snap, attempts=3)
-                        snap.unlink()
-                    video.unlink(missing_ok=True)
-                else:
-                    # No se pudo subir ahora: se guarda y se reintenta al final
-                    pending.append(video)
-            elif video.exists():
-                log(f"Segmento vacio o muy pequeno, se descarta: {video.name}")
-                video.unlink()
+            if await upload_with_retry(svc, video):
+                uploaded += 1
+                snap = UPLOAD_DIR / f"{name}_chat.json"
+                cap.save(filename=snap.name)
+                if snap.exists():
+                    await upload_with_retry(svc, snap, attempts=3)
+                    snap.unlink()
+                video.unlink(missing_ok=True)
+            else:
+                # No se pudo subir ahora: se guarda y se reintenta al final
+                pending.append(video)
 
             if not await check_live(client):
                 log("El live termino")
+                state["live_notified"] = False
                 break
             if time.time() >= deadline - SAFETY_MARGIN:
                 log("Presupuesto del runner agotado con el live activo: subiendo lo ultimo...")
@@ -383,7 +410,7 @@ async def main():
     client = TikTokLiveClient(unique_id=USERNAME)
     client.ignore_broken_payload = True
 
-    state = {"cap": None}
+    state = {"cap": None, "live_notified": False}
 
     @client.on(CommentEvent)
     async def on_comment(event):
@@ -429,6 +456,7 @@ async def main():
             except Exception as e:
                 log(f"Error inesperado grabando el live: {e} - continuando el monitor...")
         else:
+            state["live_notified"] = False
             await asyncio.sleep(POLL_SECONDS)
 
     log("Presupuesto de este run agotado: finalizando (el cron de respaldo reinicia)")
