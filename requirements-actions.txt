@@ -1,0 +1,5 @@
+# Dependencias SOLO para GitHub Actions (minimas: instalan rapido y sin fallos)
+TikTokLive>=6.0.0,<7
+httpx>=0.24.0
+google-api-python-client>=2.120.0
+google-auth>=2.27.0
