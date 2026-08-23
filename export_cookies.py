@@ -1,44 +1,37 @@
 #!/usr/bin/env python3
 """
-Exporta cookies de TikTok desde Microsoft Edge.
+Exporta cookies de TikTok desde Edge.
 
-METODO: Copiar desde Edge DevTools (siempre funciona).
+METODO RAPIDO (30 segundos):
 
-Pasos:
-  1. Abre Edge, ve a https://www.tiktok.com
-  2. Inicia sesion con tu cuenta si no lo estas
-  3. Presiona F12 → pestaña "Application" (arriba)
-  4. En el panel izquierdo: Storage → Cookies → https://www.tiktok.com
-  5. Busca estas filas en la tabla de la derecha:
+  1. Abre Edge, ve a https://www.tiktok.com (inicia sesion)
+  2. Presiona F12 → pestaña "Application" (arriba)
+  3. En el panel izquierdo: Storage → Cookies → https://www.tiktok.com
+  4. Busca y doble-clic para copiar el VALOR de cada cookie:
      - sessionid
      - tt-target-idc
      - sid_tt
      - sessionid_ss
-  6. Copia el VALOR de cada una (doble clic sobre el valor)
-  7. Ejecuta este script y pegalo cuando pregunte:
-       python export_cookies.py
+  5. Ejecuta: python export_cookies.py
+  6. Pega los valores cuando pregunte
 
-  O crea manualmente cookies.json con este formato:
-     {
-       "sessionid": "PEGA_EL_VALOR_AQUI",
-       "tt_target_idc": "PEGA_EL_VALOR_AQUI",
-       "sid_tt": "PEGA_EL_VALOR_AQUI",
-       "sessionid_ss": "PEGA_EL_VALOR_AQUI"
-     }
+  O crea cookies.json manualmente con este formato:
+  {
+    "sessionid": "AQUI_EL_VALOR",
+    "tt_target_idc": "AQUI_EL_VALOR",
+    "sid_tt": "AQUI_EL_VALOR",
+    "sessionid_ss": "AQUI_EL_VALOR"
+  }
 """
 import json
 import sys
 
 
 def main():
-    print("=== Exportar cookies de TikTok desde Edge ===")
+    print("=== Exportar cookies de TikTok ===")
     print()
-    print("Abre Edge → tiktok.com → F12 → Application → Cookies → tiktok.com")
-    print("Copia los valores de estas cookies:")
-    print("  - sessionid")
-    print("  - tt-target-idc")
-    print("  - sid_tt")
-    print("  - sessionid_ss")
+    print("Necesito estos valores de Edge DevTools:")
+    print("  F12 → Application → Cookies → tiktok.com")
     print()
 
     session = {}
@@ -46,24 +39,20 @@ def main():
         val = input(f"  {field}: ").strip()
         session[field] = val
 
-    ok = bool(session.get("sessionid"))
-    if not ok:
-        print("\nERROR: sessionid esta vacio. No hay sesion de TikTok en Edge.")
-        print("Inicia sesion en tiktok.com y vuelve a intentar.")
+    if not session.get("sessionid"):
+        print("\nERROR: sessionid esta vacio. No hay sesion de TikTok.")
         sys.exit(1)
 
-    print(f"\nOK: sesion encontrada (sessionid: ***{session['sessionid'][-4:]})")
-    print(f"    tt_target_idc: {session['tt_target_idc']}")
+    print(f"\nOK: sessionid: ***{session['sessionid'][-4:]}")
 
     with open("cookies.json", "w", encoding="utf-8") as f:
         json.dump(session, f, indent=2)
 
-    print("\nGuardado en cookies.json")
+    print("Guardado en cookies.json")
+    print()
     print("Siguiente paso:")
-    print("  1. Abre GitHub → tu repo → Settings → Secrets → Actions")
-    print("  2. New repository secret")
-    print("  3. Name: TIKTOK_COOKIES")
-    print("  4. Value: copia TODO el contenido de cookies.json")
+    print("  GitHub → tu repo → Settings → Secrets → Actions")
+    print("  → New secret → Name: TIKTOK_COOKIES → Value: pega el JSON")
 
 
 if __name__ == "__main__":
