@@ -415,20 +415,20 @@ async def main():
         CommentEvent, GiftEvent, JoinEvent, LikeEvent, FollowEvent,
     )
 
-    client = TikTokLiveClient(unique_id=USERNAME)
-    client.ignore_broken_payload = True
-
-    # Aplicar cookies de autenticacion si estan disponibles.
-    # TikTokLive necesita sessionid para ver lives bloqueados/restringidos.
     session_ok = False
+    client_cookies = {}
     if TIKTOK_COOKIES:
         try:
             ck = json.loads(TIKTOK_COOKIES)
             sid = ck.get("sessionid", "")
             idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
             if sid:
-                client._web.cookies.clear()
-                client._web.set_session(sid, idc)
+                client_cookies = {
+                    "sessionid": sid,
+                    "sid_tt": sid,
+                    "sessionid_ss": sid,
+                    "tt-target-idc": idc or "useast24",
+                }
                 session_ok = True
                 log(f"[LOGIN] Sesion TikTok aplicada OK (sessionid: ***{sid[-4:]})")
                 if idc:
@@ -441,6 +441,12 @@ async def main():
             log(f"[LOGIN] ERROR parseando TIKTOK_COOKIES: {e}")
     else:
         log("[LOGIN] Sin TIKTOK_COOKIES - solo podra ver lives publicos sin restriccion")
+
+    client = TikTokLiveClient(
+        unique_id=USERNAME,
+        web_kwargs={"httpx_kwargs": {"cookies": client_cookies}} if client_cookies else {},
+    )
+    client.ignore_broken_payload = True
 
     # Verificar si la sesion funciona (test rapido)
     if session_ok:
