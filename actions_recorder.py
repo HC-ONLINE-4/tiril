@@ -427,6 +427,7 @@ async def main():
             sid = ck.get("sessionid", "")
             idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
             if sid:
+                client._web.cookies.clear()
                 client._web.set_session(sid, idc)
                 session_ok = True
                 log(f"[LOGIN] Sesion TikTok aplicada OK (sessionid: ***{sid[-4:]})")
