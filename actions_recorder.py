@@ -48,6 +48,13 @@ DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
 SA_JSON = os.getenv("DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
 OAUTH_JSON = os.getenv("DRIVE_OAUTH_JSON", "").strip()
 TIKTOK_COOKIES = os.getenv("TIKTOK_COOKIES", "").strip()
+
+# Si no hay env var, intentar leer de cookies.json
+if not TIKTOK_COOKIES:
+    cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
+    if os.path.exists(cookies_file):
+        with open(cookies_file, "r", encoding="utf-8") as f:
+            TIKTOK_COOKIES = f.read().strip()
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 POLL_SECONDS = _env_int("POLL_SECONDS", 60)
