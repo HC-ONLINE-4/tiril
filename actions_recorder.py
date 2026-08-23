@@ -477,15 +477,23 @@ async def main():
             state["cap"].add_follow(event)
 
     svc = get_drive_service()
-    if not check_folder(svc):
+    drive_ok = check_folder(svc)
+    if not drive_ok:
         sys.exit(1)
     cleanup_old(svc)
 
     deadline = time.time() + MAX_RUNTIME
+    login_status = "SI" if session_ok else "NO"
+    drive_status = "OK" if drive_ok else "FALLO"
     log(f"Monitor iniciado: chequeando a @{USERNAME} cada {POLL_SECONDS}s "
         f"durante {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m")
-    telegram_notify(f"MONITOR ACTIVO\n@{USERNAME} cada {POLL_SECONDS}s\n"
-                    f"Vigilando hasta {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m")
+    telegram_notify(
+        f"MONITOR ACTIVO\n"
+        f"@{USERNAME} cada {POLL_SECONDS}s\n"
+        f"Vigilando hasta {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m\n"
+        f"Sesion TikTok: {login_status}\n"
+        f"Drive: {drive_status}"
+    )
 
     while time.time() < deadline - SAFETY_MARGIN:
         if await check_live(client):
