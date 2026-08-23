@@ -47,6 +47,7 @@ USERNAME = os.environ["TIKTOK_USERNAME"]
 DRIVE_FOLDER = os.environ["DRIVE_FOLDER"]
 SA_JSON = os.getenv("DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
 OAUTH_JSON = os.getenv("DRIVE_OAUTH_JSON", "").strip()
+TIKTOK_COOKIES = os.getenv("TIKTOK_COOKIES", "").strip()
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 POLL_SECONDS = _env_int("POLL_SECONDS", 60)
@@ -409,6 +410,23 @@ async def main():
 
     client = TikTokLiveClient(unique_id=USERNAME)
     client.ignore_broken_payload = True
+
+    # Aplicar cookies de autenticacion si estan disponibles.
+    # TikTokLive necesita sessionid para ver lives bloqueados/restringidos.
+    if TIKTOK_COOKIES:
+        try:
+            ck = json.loads(TIKTOK_COOKIES)
+            sid = ck.get("sessionid", "")
+            idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
+            if sid:
+                client._web.set_session(sid, idc)
+                log("Sesion TikTok aplicada (cookies autenticadas)")
+            else:
+                log("TIKTOK_COOKIES presente pero sin sessionid")
+        except Exception as e:
+            log(f"Error parseando TIKTOK_COOKIES: {e}")
+    else:
+        log("Sin cookies de sesion - algunos lives pueden requerir login")
 
     state = {"cap": None, "live_notified": False}
 
