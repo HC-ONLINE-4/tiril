@@ -413,6 +413,7 @@ async def main():
 
     # Aplicar cookies de autenticacion si estan disponibles.
     # TikTokLive necesita sessionid para ver lives bloqueados/restringidos.
+    session_ok = False
     if TIKTOK_COOKIES:
         try:
             ck = json.loads(TIKTOK_COOKIES)
@@ -420,13 +421,26 @@ async def main():
             idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
             if sid:
                 client._web.set_session(sid, idc)
-                log("Sesion TikTok aplicada (cookies autenticadas)")
+                session_ok = True
+                log(f"[LOGIN] Sesion TikTok aplicada OK (sessionid: ***{sid[-4:]})")
+                if idc:
+                    log(f"[LOGIN] Centro de datos: {idc}")
             else:
-                log("TIKTOK_COOKIES presente pero sin sessionid")
+                log("[LOGIN] TIKTOK_COOKIES presente pero sessionid VACIO - no hay sesion")
+        except json.JSONDecodeError:
+            log("[LOGIN] ERROR: TIKTOK_COOKIES no es JSON valido - revisa el formato")
         except Exception as e:
-            log(f"Error parseando TIKTOK_COOKIES: {e}")
+            log(f"[LOGIN] ERROR parseando TIKTOK_COOKIES: {e}")
     else:
-        log("Sin cookies de sesion - algunos lives pueden requerir login")
+        log("[LOGIN] Sin TIKTOK_COOKIES - solo podra ver lives publicos sin restriccion")
+
+    # Verificar si la sesion funciona (test rapido)
+    if session_ok:
+        try:
+            test = await client.is_live()
+            log(f"[LOGIN] Verificacion OK - acceso a TikTok funcional")
+        except Exception as e:
+            log(f"[LOGIN] WARNING: la sesion puede estar expirada: {e}")
 
     state = {"cap": None, "live_notified": False}
 
