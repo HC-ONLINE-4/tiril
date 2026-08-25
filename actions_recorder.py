@@ -152,6 +152,7 @@ def check_folder(svc):
         return True
     except Exception as e:
         log(f"ERROR: no se puede ESCRIBIR en la carpeta de Drive: {e}")
+        telegram_notify(f"🔴 ERROR DRIVE\n@{USERNAME}\n{e}")
         if OAUTH_JSON:
             log("El token fue creado con la cuenta duena de la carpeta? "
                 "(vuelve a correr: python drive_setup.py client_secret.json)")
@@ -221,6 +222,7 @@ def record_segment(url, name, limit_seconds):
                        timeout=limit_seconds + 120)
     except Exception as e:
         log(f"Error en ffmpeg: {e}")
+        telegram_notify(f"🔴 ERROR FFMPEG\n@{USERNAME}\n{e}")
     return video
 
 
@@ -243,6 +245,7 @@ def extract_stream_url(room_info):
                 return url
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
         log(f"Error extrayendo stream URL: {e}")
+        telegram_notify(f"⚠️ ERROR STREAM URL\n@{USERNAME}\n{e}")
     return None
 
 
@@ -251,6 +254,7 @@ async def check_live(client) -> bool:
         return await client.is_live()
     except Exception as e:
         log(f"Error verificando live: {e}")
+        telegram_notify(f"⚠️ ERROR VERIFICANDO LIVE\n@{USERNAME}\n{e}")
         return False
 
 
@@ -272,6 +276,7 @@ async def record_whole_live(client, state, svc, deadline) -> bool:
             await client.start(fetch_room_info=True)
         except Exception as e:
             log(f"Error conectando: {e}")
+            telegram_notify(f"🔴 ERROR WEBSOCKET\n@{USERNAME}\n{e}")
             return False
 
         title = "Sin titulo"
@@ -408,6 +413,7 @@ async def main():
                 return
     except Exception as e:
         log(f"Error de red: {e} - saliendo")
+        telegram_notify(f"🔴 ERROR RED\n@{USERNAME}\n{e}")
         return
 
     # Autorizar sign server para sesiones autenticadas
@@ -512,6 +518,7 @@ async def main():
                     cleanup_old(svc)
             except Exception as e:
                 log(f"Error inesperado grabando el live: {e} - continuando el monitor...")
+                telegram_notify(f"🔴 ERROR GRABANDO\n@{USERNAME}\n{e}")
         else:
             state["live_notified"] = False
             await asyncio.sleep(POLL_SECONDS)
