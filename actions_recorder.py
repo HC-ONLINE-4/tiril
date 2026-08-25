@@ -410,6 +410,9 @@ async def main():
         log(f"Error de red: {e} - saliendo")
         return
 
+    # Autorizar sign server para sesiones autenticadas
+    os.environ["WHITELIST_AUTHENTICATED_SESSION_ID_HOST"] = "api.eulerstream.com"
+
     from TikTokLive import TikTokLiveClient
     from TikTokLive.events import (
         CommentEvent, GiftEvent, JoinEvent, LikeEvent, FollowEvent,
