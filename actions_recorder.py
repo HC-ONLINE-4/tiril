@@ -425,23 +425,18 @@ async def main():
     )
 
     session_ok = False
-    client_cookies = {}
+    session_id = ""
+    session_idc = ""
     if TIKTOK_COOKIES:
         try:
             ck = json.loads(TIKTOK_COOKIES)
-            sid = ck.get("sessionid", "")
-            idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
-            if sid:
-                client_cookies = {
-                    "sessionid": sid,
-                    "sid_tt": sid,
-                    "sessionid_ss": sid,
-                    "tt-target-idc": idc or "useast24",
-                }
+            session_id = ck.get("sessionid", "")
+            session_idc = ck.get("tt_target_idc") or ck.get("tt-target-idc", "")
+            if session_id:
                 session_ok = True
-                log(f"[LOGIN] Sesion TikTok aplicada OK (sessionid: ***{sid[-4:]})")
-                if idc:
-                    log(f"[LOGIN] Centro de datos: {idc}")
+                log(f"[LOGIN] Sesion TikTok aplicada OK (sessionid: ***{session_id[-4:]})")
+                if session_idc:
+                    log(f"[LOGIN] Centro de datos: {session_idc}")
             else:
                 log("[LOGIN] TIKTOK_COOKIES presente pero sessionid VACIO - no hay sesion")
         except json.JSONDecodeError:
@@ -451,11 +446,12 @@ async def main():
     else:
         log("[LOGIN] Sin TIKTOK_COOKIES - solo podra ver lives publicos sin restriccion")
 
-    client = TikTokLiveClient(
-        unique_id=USERNAME,
-        web_kwargs={"httpx_kwargs": {"cookies": client_cookies}} if client_cookies else {},
-    )
+    client = TikTokLiveClient(unique_id=USERNAME)
     client.ignore_broken_payload = True
+
+    # Aplicar sesion despues de crear el cliente (metodo oficial)
+    if session_ok and session_id:
+        client.web.set_session(session_id, session_idc)
 
     # Verificar si la sesion funciona (test rapido)
     if session_ok:
