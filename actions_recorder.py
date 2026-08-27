@@ -460,7 +460,9 @@ async def main():
     client.ignore_broken_payload = True
 
     # Aplicar sesion despues de crear el cliente (metodo oficial)
+    # Limpiar cookies primero para evitar duplicado "tt-target-idc"
     if session_ok and session_id:
+        client._web.cookies.clear()
         client.web.set_session(session_id, session_idc)
 
     # Verificar si la sesion funciona (test rapido)
