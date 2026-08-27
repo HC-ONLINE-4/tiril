@@ -250,12 +250,22 @@ def extract_stream_url(room_info):
 
 
 async def check_live(client) -> bool:
-    try:
-        return await client.is_live()
-    except Exception as e:
-        log(f"Error verificando live: {e}")
-        telegram_notify(f"⚠️ ERROR VERIFICANDO LIVE\n@{USERNAME}\n{e}")
-        return False
+    """Verifica si el usuario esta en vivo con reintentos."""
+    for attempt in range(3):
+        try:
+            result = await client.is_live()
+            if result is None:
+                log(f"[CHECK] is_live() devolvio None (intento {attempt + 1}/3)")
+                await asyncio.sleep(2)
+                continue
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            log(f"Error verificando live (intento {attempt + 1}/3): {e}")
+            if attempt < 2:
+                await asyncio.sleep(3)
+    telegram_notify(f"⚠️ ERROR VERIFICANDO LIVE\n@{USERNAME}\n3 intentos fallidos")
+    return False
 
 
 async def record_whole_live(client, state, svc, deadline) -> bool:
@@ -457,7 +467,10 @@ async def main():
     if session_ok:
         try:
             test = await client.is_live()
-            log(f"[LOGIN] Verificacion OK - acceso a TikTok funcional")
+            if test is None:
+                log("[LOGIN] WARNING: is_live() devolvio None - la sesion puede no estar funcionando")
+            else:
+                log(f"[LOGIN] Verificacion OK - acceso a TikTok funcional")
         except Exception as e:
             log(f"[LOGIN] WARNING: la sesion puede estar expirada: {e}")
 
