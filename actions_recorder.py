@@ -522,6 +522,7 @@ async def main():
         f"Drive: {drive_status}"
     )
 
+    last_heartbeat = time.time()
     while time.time() < deadline - SAFETY_MARGIN:
         if await check_live(client):
             try:
@@ -534,7 +535,23 @@ async def main():
             state["live_notified"] = False
             await asyncio.sleep(POLL_SECONDS)
 
-    log("Presupuesto de este run agotado: finalizando (el cron de respaldo reinicia)")
+        # Heartbeat: avisar cada hora que sigue activo
+        if time.time() - last_heartbeat >= 3600:
+            remaining = int((deadline - time.time()) / 3600)
+            telegram_notify(
+                f"✅ MONITOR ACTIVO (heartbeat)\n"
+                f"@{USERNAME}\n"
+                f"Tiempo restante: ~{remaining}h"
+            )
+            last_heartbeat = time.time()
+
+    log("Presupuesto de este run agotado: finalizando")
+    telegram_notify(
+        f"⏹️ MONITOR FINALIZADO\n"
+        f"@{USERNAME}\n"
+        f"Duracion: {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m\n"
+        f"El cron disparara el siguiente ciclo."
+    )
 
 
 if __name__ == "__main__":
