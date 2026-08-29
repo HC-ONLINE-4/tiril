@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Solo un job a la vez - si hay uno corriendo, el siguiente espera
+concurrency:
+  group: recorder
+  cancel-in-progress: false
+
 jobs:
   record:
     runs-on: ubuntu-latest
