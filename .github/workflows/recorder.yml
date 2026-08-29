@@ -1,23 +1,18 @@
 name: tiktok-recorder
 
-# El job en si chequea a TikTok cada 60 segundos y graba el live completo.
-# Este cron de respaldo solo reinicia el job si el runner muere (max 6h por job).
+# Grabacion continua: cada job dura 5h y al terminar dispara el siguiente.
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '0 */5 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: recorder
-  cancel-in-progress: false
-
 jobs:
   record:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
 
@@ -43,3 +38,12 @@ jobs:
           POLL_SECONDS: ${{ vars.POLL_SECONDS }}
           RETENTION_DAYS: ${{ vars.RETENTION_DAYS }}
         run: python actions_recorder.py
+
+      - name: Programar siguiente ejecucion
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Disparando siguiente ciclo de grabacion..."
+          gh workflow run recorder.yml --ref ${{ github.ref_name }}
+          echo "Siguiente ejecucion programada."
