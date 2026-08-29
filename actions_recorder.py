@@ -113,6 +113,27 @@ def telegram_notify(text: str):
     task.add_done_callback(_tg_tasks.discard)
 
 
+def get_profile_stats():
+    """Obtiene estadisticas del perfil (seguidores, videos, etc) via web scraping."""
+    try:
+        import re
+        resp = httpx.get(
+            f"https://www.tiktok.com/@{USERNAME}",
+            headers={"User-Agent": UA},
+            follow_redirects=True,
+            timeout=15,
+        )
+        html = resp.text
+        stats = {}
+        for field in ['followerCount', 'followingCount', 'heartCount', 'videoCount']:
+            match = re.search(f'"{field}"\\s*:\\s*(\\d+)', html)
+            if match:
+                stats[field] = int(match.group(1))
+        return stats
+    except Exception:
+        return {}
+
+
 def get_drive_service():
     from googleapiclient.discovery import build
 
@@ -561,6 +582,12 @@ async def main():
         # Heartbeat: avisar cada hora con estadisticas
         if time.time() - last_heartbeat >= 3600:
             remaining = int((deadline - time.time()) / 3600)
+            
+            # Obtener stats del perfil
+            profile = get_profile_stats()
+            videos_count = profile.get("videoCount", "?")
+            followers = profile.get("followerCount", "?")
+            
             errors_detail = ""
             if stats["http_errors"]:
                 errors_detail = "\nErrores HTTP:\n"
@@ -571,6 +598,9 @@ async def main():
                 f"@{USERNAME}\n"
                 f"Tiempo restante: ~{remaining}h\n"
                 f"---\n"
+                f"Videos publicados: {videos_count}\n"
+                f"Seguidores: {followers}\n"
+                f"---\n"
                 f"Chequeos: {stats['checks']}\n"
                 f"Live detectados: {stats['live_detected']}\n"
                 f"Grabaciones: {stats['recordings']}\n"
@@ -580,6 +610,12 @@ async def main():
             last_heartbeat = time.time()
 
     log("Presupuesto de este run agotado: finalizando")
+    
+    # Obtener stats finales del perfil
+    profile = get_profile_stats()
+    videos_count = profile.get("videoCount", "?")
+    followers = profile.get("followerCount", "?")
+    
     errors_detail = ""
     if stats["http_errors"]:
         errors_detail = "\nErrores HTTP:\n"
@@ -589,6 +625,9 @@ async def main():
         f"⏹️ MONITOR FINALIZADO\n"
         f"@{USERNAME}\n"
         f"Duracion: {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m\n"
+        f"---\n"
+        f"Videos publicados: {videos_count}\n"
+        f"Seguidores: {followers}\n"
         f"---\n"
         f"Chequeos: {stats['checks']}\n"
         f"Live detectados: {stats['live_detected']}\n"
