@@ -587,6 +587,7 @@ async def main():
             profile = get_profile_stats()
             videos_count = profile.get("videoCount", "?")
             followers = profile.get("followerCount", "?")
+            likes = profile.get("heartCount", "?")
             
             errors_detail = ""
             if stats["http_errors"]:
@@ -598,8 +599,9 @@ async def main():
                 f"@{USERNAME}\n"
                 f"Tiempo restante: ~{remaining}h\n"
                 f"---\n"
-                f"Videos publicados: {videos_count}\n"
+                f"Videos: {videos_count}\n"
                 f"Seguidores: {followers}\n"
+                f"Likes totales: {likes}\n"
                 f"---\n"
                 f"Chequeos: {stats['checks']}\n"
                 f"Live detectados: {stats['live_detected']}\n"
@@ -615,6 +617,7 @@ async def main():
     profile = get_profile_stats()
     videos_count = profile.get("videoCount", "?")
     followers = profile.get("followerCount", "?")
+    likes = profile.get("heartCount", "?")
     
     errors_detail = ""
     if stats["http_errors"]:
@@ -626,8 +629,9 @@ async def main():
         f"@{USERNAME}\n"
         f"Duracion: {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m\n"
         f"---\n"
-        f"Videos publicados: {videos_count}\n"
+        f"Videos: {videos_count}\n"
         f"Seguidores: {followers}\n"
+        f"Likes totales: {likes}\n"
         f"---\n"
         f"Chequeos: {stats['checks']}\n"
         f"Live detectados: {stats['live_detected']}\n"
