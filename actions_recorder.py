@@ -522,35 +522,80 @@ async def main():
         f"Drive: {drive_status}"
     )
 
+    # Estadisticas
+    stats = {
+        "checks": 0,
+        "live_detected": 0,
+        "recordings": 0,
+        "errors": 0,
+        "http_errors": {},
+    }
+
     last_heartbeat = time.time()
     while time.time() < deadline - SAFETY_MARGIN:
-        if await check_live(client):
+        stats["checks"] += 1
+        try:
+            is_live = await check_live(client)
+        except Exception as e:
+            stats["errors"] += 1
+            error_key = str(e)[:50]
+            stats["http_errors"][error_key] = stats["http_errors"].get(error_key, 0) + 1
+            is_live = False
+
+        if is_live:
+            stats["live_detected"] += 1
             try:
                 if await record_whole_live(client, state, svc, deadline):
+                    stats["recordings"] += 1
                     cleanup_old(svc)
             except Exception as e:
+                stats["errors"] += 1
+                error_key = str(e)[:50]
+                stats["http_errors"][error_key] = stats["http_errors"].get(error_key, 0) + 1
                 log(f"Error inesperado grabando el live: {e} - continuando el monitor...")
                 telegram_notify(f"🔴 ERROR GRABANDO\n@{USERNAME}\n{e}")
         else:
             state["live_notified"] = False
             await asyncio.sleep(POLL_SECONDS)
 
-        # Heartbeat: avisar cada hora que sigue activo
+        # Heartbeat: avisar cada hora con estadisticas
         if time.time() - last_heartbeat >= 3600:
             remaining = int((deadline - time.time()) / 3600)
+            errors_detail = ""
+            if stats["http_errors"]:
+                errors_detail = "\nErrores HTTP:\n"
+                for err, count in sorted(stats["http_errors"].items(), key=lambda x: -x[1])[:5]:
+                    errors_detail += f"  - {err}: {count}x\n"
             telegram_notify(
-                f"✅ MONITOR ACTIVO (heartbeat)\n"
+                f"✅ HEARTBEAT (1h)\n"
                 f"@{USERNAME}\n"
-                f"Tiempo restante: ~{remaining}h"
+                f"Tiempo restante: ~{remaining}h\n"
+                f"---\n"
+                f"Chequeos: {stats['checks']}\n"
+                f"Live detectados: {stats['live_detected']}\n"
+                f"Grabaciones: {stats['recordings']}\n"
+                f"Errores: {stats['errors']}"
+                f"{errors_detail}"
             )
             last_heartbeat = time.time()
 
     log("Presupuesto de este run agotado: finalizando")
+    errors_detail = ""
+    if stats["http_errors"]:
+        errors_detail = "\nErrores HTTP:\n"
+        for err, count in sorted(stats["http_errors"].items(), key=lambda x: -x[1])[:5]:
+            errors_detail += f"  - {err}: {count}x\n"
     telegram_notify(
         f"⏹️ MONITOR FINALIZADO\n"
         f"@{USERNAME}\n"
         f"Duracion: {MAX_RUNTIME // 3600}h{MAX_RUNTIME % 3600 // 60}m\n"
-        f"El cron disparara el siguiente ciclo."
+        f"---\n"
+        f"Chequeos: {stats['checks']}\n"
+        f"Live detectados: {stats['live_detected']}\n"
+        f"Grabaciones: {stats['recordings']}\n"
+        f"Errores: {stats['errors']}"
+        f"{errors_detail}"
+        f"\nEl cron disparara el siguiente ciclo."
     )
 
 
