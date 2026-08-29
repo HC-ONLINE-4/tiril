@@ -117,9 +117,22 @@ def get_profile_stats():
     """Obtiene estadisticas del perfil (seguidores, videos, etc) via web scraping."""
     try:
         import re
+        # Usar cookies de sesion si estan disponibles
+        cookies_str = ""
+        if TIKTOK_COOKIES:
+            try:
+                ck = json.loads(TIKTOK_COOKIES)
+                cookies_str = "; ".join(f"{k}={v}" for k, v in ck.items())
+            except Exception:
+                pass
+        
+        headers = {"User-Agent": UA}
+        if cookies_str:
+            headers["Cookie"] = cookies_str
+        
         resp = httpx.get(
             f"https://www.tiktok.com/@{USERNAME}",
-            headers={"User-Agent": UA},
+            headers=headers,
             follow_redirects=True,
             timeout=15,
         )
