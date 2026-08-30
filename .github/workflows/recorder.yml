@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 # Solo un job a la vez - si hay uno corriendo, el siguiente espera
 concurrency:
