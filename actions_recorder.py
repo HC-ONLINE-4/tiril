@@ -63,8 +63,26 @@ MAX_RUNTIME = _env_int("MAX_RUNTIME", 19500)  # 5h25m: deja ~28 min al job (350)
 SAFETY_MARGIN = 300  # no empezar grabaciones nuevas faltando <5 min para el limite
 FFMPEG = "ffmpeg"
 UPLOAD_DIR = Path("/tmp/upload")
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+
+# User-Agents para rotar y evitar bloqueos
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+]
+_ua_index = 0
+
+
+def get_random_ua():
+    """Retorna un user-agent de la lista (rotacion)."""
+    global _ua_index
+    ua = USER_AGENTS[_ua_index % len(USER_AGENTS)]
+    _ua_index += 1
+    return ua
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -127,12 +145,15 @@ def get_profile_stats():
         except Exception:
             pass
     
-    headers = {"User-Agent": UA}
-    if cookies_str:
-        headers["Cookie"] = cookies_str
+    last_error = ""
     
     # Reintentar hasta 3 veces con espera
     for attempt in range(3):
+        ua = get_random_ua()
+        headers = {"User-Agent": ua}
+        if cookies_str:
+            headers["Cookie"] = cookies_str
+        
         try:
             resp = httpx.get(
                 f"https://www.tiktok.com/@{USERNAME}",
@@ -143,12 +164,14 @@ def get_profile_stats():
             
             # Verificar si TikTok bloqueo
             if resp.status_code == 429:
-                log(f"[STATS] Rate limit de TikTok (429), esperando 30s...")
+                last_error = f"HTTP 429 (rate limit)"
+                log(f"[STATS] Rate limit (429), esperando 30s... (intento {attempt + 1}/3)")
                 time.sleep(30)
                 continue
             
             if resp.status_code != 200:
-                log(f"[STATS] TikTok devolvio HTTP {resp.status_code}")
+                last_error = f"HTTP {resp.status_code}"
+                log(f"[STATS] HTTP {resp.status_code} de TikTok (intento {attempt + 1}/3)")
                 time.sleep(5)
                 continue
             
@@ -156,7 +179,8 @@ def get_profile_stats():
             
             # Verificar si devolvio una pagina valida
             if "videoCount" not in html and "followerCount" not in html:
-                log(f"[STATS] TikTok no devolvio datos del perfil (intento {attempt + 1}/3)")
+                last_error = "Sin datos en HTML"
+                log(f"[STATS] Sin datos del perfil en HTML (intento {attempt + 1}/3)")
                 time.sleep(10)
                 continue
             
@@ -169,15 +193,17 @@ def get_profile_stats():
             if stats:
                 return stats
             else:
-                log(f"[STATS] No se encontraron stats en HTML (intento {attempt + 1}/3)")
+                last_error = "Stats vacias"
+                log(f"[STATS] Stats vacias en HTML (intento {attempt + 1}/3)")
                 time.sleep(10)
                 
         except Exception as e:
+            last_error = str(e)[:50]
             log(f"[STATS] Error obteniendo stats (intento {attempt + 1}/3): {e}")
             time.sleep(10)
     
     log(f"[STATS] No se pudieron obtener stats despues de 3 intentos")
-    return {}
+    return {"_error": last_error or "Error desconocido"}
 
 
 def get_drive_service():
@@ -634,10 +660,13 @@ async def main():
             videos_count = profile.get("videoCount", "?")
             followers = profile.get("followerCount", "?")
             likes = profile.get("heartCount", "?")
+            profile_error = profile.get("_error", "")
             
             errors_detail = ""
+            if profile_error:
+                errors_detail += f"\nProfile: {profile_error}"
             if stats["http_errors"]:
-                errors_detail = "\nErrores HTTP:\n"
+                errors_detail += "\nErrores HTTP:\n"
                 for err, count in sorted(stats["http_errors"].items(), key=lambda x: -x[1])[:5]:
                     errors_detail += f"  - {err}: {count}x\n"
             telegram_notify(
