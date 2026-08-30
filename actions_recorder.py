@@ -115,36 +115,69 @@ def telegram_notify(text: str):
 
 def get_profile_stats():
     """Obtiene estadisticas del perfil (seguidores, videos, etc) via web scraping."""
-    try:
-        import re
-        # Usar cookies de sesion si estan disponibles
-        cookies_str = ""
-        if TIKTOK_COOKIES:
-            try:
-                ck = json.loads(TIKTOK_COOKIES)
-                cookies_str = "; ".join(f"{k}={v}" for k, v in ck.items())
-            except Exception:
-                pass
-        
-        headers = {"User-Agent": UA}
-        if cookies_str:
-            headers["Cookie"] = cookies_str
-        
-        resp = httpx.get(
-            f"https://www.tiktok.com/@{USERNAME}",
-            headers=headers,
-            follow_redirects=True,
-            timeout=15,
-        )
-        html = resp.text
-        stats = {}
-        for field in ['followerCount', 'followingCount', 'heartCount', 'videoCount']:
-            match = re.search(f'"{field}"\\s*:\\s*(\\d+)', html)
-            if match:
-                stats[field] = int(match.group(1))
-        return stats
-    except Exception:
-        return {}
+    import re
+    import time
+    
+    # Usar cookies de sesion si estan disponibles
+    cookies_str = ""
+    if TIKTOK_COOKIES:
+        try:
+            ck = json.loads(TIKTOK_COOKIES)
+            cookies_str = "; ".join(f"{k}={v}" for k, v in ck.items())
+        except Exception:
+            pass
+    
+    headers = {"User-Agent": UA}
+    if cookies_str:
+        headers["Cookie"] = cookies_str
+    
+    # Reintentar hasta 3 veces con espera
+    for attempt in range(3):
+        try:
+            resp = httpx.get(
+                f"https://www.tiktok.com/@{USERNAME}",
+                headers=headers,
+                follow_redirects=True,
+                timeout=15,
+            )
+            
+            # Verificar si TikTok bloqueo
+            if resp.status_code == 429:
+                log(f"[STATS] Rate limit de TikTok (429), esperando 30s...")
+                time.sleep(30)
+                continue
+            
+            if resp.status_code != 200:
+                log(f"[STATS] TikTok devolvio HTTP {resp.status_code}")
+                time.sleep(5)
+                continue
+            
+            html = resp.text
+            
+            # Verificar si devolvio una pagina valida
+            if "videoCount" not in html and "followerCount" not in html:
+                log(f"[STATS] TikTok no devolvio datos del perfil (intento {attempt + 1}/3)")
+                time.sleep(10)
+                continue
+            
+            stats = {}
+            for field in ['followerCount', 'followingCount', 'heartCount', 'videoCount']:
+                match = re.search(f'"{field}"\\s*:\\s*(\\d+)', html)
+                if match:
+                    stats[field] = int(match.group(1))
+            
+            if stats:
+                return stats
+            else:
+                log(f"[STATS] No se encontraron stats en HTML (intento {attempt + 1}/3)")
+                time.sleep(10)
+                
+        except Exception as e:
+            log(f"[STATS] Error obteniendo stats (intento {attempt + 1}/3): {e}")
+            time.sleep(10)
+    
+    log(f"[STATS] No se pudieron obtener stats despues de 3 intentos")
+    return {}
 
 
 def get_drive_service():
