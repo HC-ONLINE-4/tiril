@@ -509,7 +509,7 @@ async def main():
         sys.exit(2)
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": UA}, timeout=8) as hc:
+        async with httpx.AsyncClient(headers={"User-Agent": get_random_ua()}, timeout=8) as hc:
             r = await hc.get("https://www.tiktok.com")
             if r.status_code != 200:
                 log("Sin red valida, saliendo")
