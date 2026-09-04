@@ -553,10 +553,21 @@ async def main():
     client.ignore_broken_payload = True
 
     # Aplicar sesion despues de crear el cliente (metodo oficial)
-    # Limpiar cookies primero para evitar duplicado "tt-target-idc"
     if session_ok and session_id:
+        # Limpiar cookies primero para evitar duplicado "tt-target-idc"
         client._web.cookies.clear()
+        
+        # Establecer la sesion
         client.web.set_session(session_id, session_idc)
+        
+        # Tambien agregar cookies manualmente al httpx client
+        client._web._http.cookies.set("sessionid", session_id, domain=".tiktok.com")
+        if session_idc:
+            client._web._http.cookies.set("tt_target_idc", session_idc, domain=".tiktok.com")
+        
+        log(f"[LOGIN] Sesion configurada OK (sessionid: ***{session_id[-4:]})")
+        if session_idc:
+            log(f"[LOGIN] Centro de datos: {session_idc}")
 
     # Verificar si la sesion funciona (test rapido)
     if session_ok:
