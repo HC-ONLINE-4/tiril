@@ -561,9 +561,9 @@ async def main():
         client.web.set_session(session_id, session_idc)
         
         # Tambien agregar cookies manualmente al httpx client
-        client._web._http.cookies.set("sessionid", session_id, domain=".tiktok.com")
+        client._web._httpx.cookies.set("sessionid", session_id, domain=".tiktok.com")
         if session_idc:
-            client._web._http.cookies.set("tt_target_idc", session_idc, domain=".tiktok.com")
+            client._web._httpx.cookies.set("tt_target_idc", session_idc, domain=".tiktok.com")
         
         log(f"[LOGIN] Sesion configurada OK (sessionid: ***{session_id[-4:]})")
         if session_idc:
