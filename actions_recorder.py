@@ -675,8 +675,8 @@ async def main():
         if time.time() - last_heartbeat >= 3600:
             remaining = int((deadline - time.time()) / 3600)
             
-            # Obtener stats del perfil
-            profile = get_profile_stats()
+            # Obtener stats del perfil (en thread separado por Playwright sync)
+            profile = await asyncio.to_thread(get_profile_stats)
             videos_count = profile.get("videoCount", "?")
             followers = profile.get("followerCount", "?")
             likes = profile.get("heartCount", "?")
@@ -708,8 +708,8 @@ async def main():
 
     log("Presupuesto de este run agotado: finalizando")
     
-    # Obtener stats finales del perfil
-    profile = get_profile_stats()
+    # Obtener stats finales del perfil (en thread separado por Playwright sync)
+    profile = await asyncio.to_thread(get_profile_stats)
     videos_count = profile.get("videoCount", "?")
     followers = profile.get("followerCount", "?")
     likes = profile.get("heartCount", "?")
