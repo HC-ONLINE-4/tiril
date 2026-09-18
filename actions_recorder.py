@@ -132,75 +132,84 @@ def telegram_notify(text: str):
 
 
 def get_profile_stats():
-    """Obtiene estadisticas del perfil (seguidores, videos, etc) via web scraping."""
+    """Obtiene estadisticas del perfil via Playwright (bypass WAF)."""
     import re
     import time
     
-    # Usar cookies de sesion si estan disponibles
-    cookies_str = ""
-    if TIKTOK_COOKIES:
-        try:
-            ck = json.loads(TIKTOK_COOKIES)
-            cookies_str = "; ".join(f"{k}={v}" for k, v in ck.items())
-        except Exception:
-            pass
-    
     last_error = ""
     
-    # Reintentar hasta 3 veces con espera
     for attempt in range(3):
-        ua = get_random_ua()
-        headers = {"User-Agent": ua}
-        if cookies_str:
-            headers["Cookie"] = cookies_str
-        
         try:
-            resp = httpx.get(
-                f"https://www.tiktok.com/@{USERNAME}",
-                headers=headers,
-                follow_redirects=True,
-                timeout=15,
-            )
+            from playwright.sync_api import sync_playwright
             
-            # Verificar si TikTok bloqueo
-            if resp.status_code == 429:
-                last_error = f"HTTP 429 (rate limit)"
-                log(f"[STATS] Rate limit (429), esperando 30s... (intento {attempt + 1}/3)")
-                time.sleep(30)
-                continue
+            # Parsear cookies
+            cookies = []
+            if TIKTOK_COOKIES:
+                try:
+                    ck = json.loads(TIKTOK_COOKIES)
+                    for k, v in ck.items():
+                        cookies.append({
+                            "name": k,
+                            "value": v,
+                            "domain": ".tiktok.com",
+                            "path": "/",
+                        })
+                except Exception:
+                    pass
             
-            if resp.status_code != 200:
-                last_error = f"HTTP {resp.status_code}"
-                log(f"[STATS] HTTP {resp.status_code} de TikTok (intento {attempt + 1}/3)")
-                time.sleep(5)
-                continue
-            
-            html = resp.text
-            
-            # Verificar si devolvio una pagina valida
-            if "videoCount" not in html and "followerCount" not in html:
-                last_error = "Sin datos en HTML"
-                log(f"[STATS] Sin datos del perfil en HTML (intento {attempt + 1}/3)")
-                time.sleep(10)
-                continue
-            
-            stats = {}
-            for field in ['followerCount', 'followingCount', 'heartCount', 'videoCount']:
-                match = re.search(f'"{field}"\\s*:\\s*(\\d+)', html)
-                if match:
-                    stats[field] = int(match.group(1))
-            
-            if stats:
-                return stats
-            else:
-                last_error = "Stats vacias"
-                log(f"[STATS] Stats vacias en HTML (intento {attempt + 1}/3)")
-                time.sleep(10)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+                context = browser.new_context(
+                    user_agent=get_random_ua(),
+                    viewport={"width": 1920, "height": 1080},
+                )
                 
+                # Agregar cookies
+                if cookies:
+                    context.add_cookies(cookies)
+                
+                page = context.new_page()
+                
+                try:
+                    # Navegar al perfil
+                    page.goto(
+                        f"https://www.tiktok.com/@{USERNAME}",
+                        wait_until="networkidle",
+                        timeout=30000,
+                    )
+                    
+                    # Esperar a que cargue el contenido
+                    time.sleep(3)
+                    
+                    html = page.content()
+                    
+                    # Verificar si devolvio una pagina valida
+                    if "videoCount" not in html and "followerCount" not in html:
+                        last_error = "Sin datos en HTML (WAF?)"
+                        log(f"[STATS] Sin datos en HTML (intento {attempt + 1}/3)")
+                        continue
+                    
+                    stats = {}
+                    for field in ['followerCount', 'followingCount', 'heartCount', 'videoCount']:
+                        match = re.search(f'"{field}"\\s*:\\s*(\\d+)', html)
+                        if match:
+                            stats[field] = int(match.group(1))
+                    
+                    if stats:
+                        browser.close()
+                        return stats
+                    else:
+                        last_error = "Stats vacias"
+                        log(f"[STATS] Stats vacias (intento {attempt + 1}/3)")
+                        
+                finally:
+                    browser.close()
+                    
         except Exception as e:
             last_error = str(e)[:50]
-            log(f"[STATS] Error obteniendo stats (intento {attempt + 1}/3): {e}")
-            time.sleep(10)
+            log(f"[STATS] Error (intento {attempt + 1}/3): {e}")
+        
+        time.sleep(5)
     
     log(f"[STATS] No se pudieron obtener stats despues de 3 intentos")
     return {"_error": last_error or "Error desconocido"}
