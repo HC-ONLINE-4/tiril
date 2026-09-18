@@ -29,6 +29,7 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install --retries 5 --timeout 60 -r requirements-actions.txt
+          playwright install chromium
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
 
